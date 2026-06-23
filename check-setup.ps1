@@ -24,26 +24,31 @@ function Show-Na($msg) { Write-Host "[--] $msg" -ForegroundColor Gray }
 Show-Header "1. WSL2"
 # ======================================================
 
-$wslList = & $wsl --list --quiet 2>&1
-if ($LASTEXITCODE -eq 0) {
+# WSL2 enabled check (wsl --list output is UTF-16 LE, avoid string matching)
+$wslTest = & $wsl --status 2>&1
+if ($LASTEXITCODE -eq 0 -or $wslTest -match "Default") {
     Show-Ok "WSL2 is enabled"
 } else {
     Show-Ng "WSL2 is not enabled" "Run as admin: wsl --install"
 }
 
-$ubuntuInstalled = $wslList | Where-Object { $_ -match "Ubuntu" }
+# Ubuntu check: actually run a command inside Ubuntu to verify
+$ubuntuEcho = & $wsl -d Ubuntu -- echo "ok" 2>&1
+$ubuntuInstalled = ($LASTEXITCODE -eq 0 -and $ubuntuEcho -match "ok")
 if ($ubuntuInstalled) {
-    Show-Ok "Ubuntu is installed"
+    Show-Ok "Ubuntu is installed and accessible"
 } else {
-    Show-Ng "Ubuntu is not installed" "wsl --install"
+    Show-Ng "Ubuntu is not installed or not accessible" "wsl --install"
 }
 
 if ($ubuntuInstalled) {
-    $versionInfo = & $wsl --list --verbose 2>&1 | Where-Object { $_ -match "Ubuntu" }
-    if ($versionInfo -match "\s2\s") {
+    $verOut = & $wsl --list --verbose 2>&1
+    # UTF-16 LE output: join and strip null bytes before matching
+    $verStr = ($verOut -join " ") -replace "`0",""
+    if ($verStr -match "Ubuntu\s+Running\s+2") {
         Show-Ok "WSL version: 2"
     } else {
-        Show-Ng "WSL version is not 2" "wsl --set-version Ubuntu 2"
+        Show-Ng "WSL version may not be 2" "wsl --set-version Ubuntu 2"
     }
 }
 
