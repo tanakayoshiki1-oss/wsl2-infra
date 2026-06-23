@@ -76,20 +76,36 @@ wsl2-infra/
 
 部分的にセットアップ済みの場合、まず以下のスクリプトで現状を確認する。
 
+> **社給 PC では `& script.ps1` の直接実行が禁止されている場合がある。**
+> `Unblock-File` + `powershell.exe -ExecutionPolicy Bypass -File` を使うこと。
+
 ```powershell
-# wsl2-infra をクローン済みの場合
-Set-ExecutionPolicy -Scope Process Bypass
-cd "$env:OneDrive\Projects\wsl2-infra"   # OneDrive パスは環境に合わせて変更
-.\check-setup.ps1
+$url    = "https://raw.githubusercontent.com/tanakayoshiki1-oss/wsl2-infra/main/check-setup.ps1"
+$script = "$env:TEMP\check-setup.ps1"
+
+Invoke-WebRequest $url -OutFile $script
+Unblock-File $script
+powershell.exe -ExecutionPolicy Bypass -File $script
 ```
 
-クローン前で手元にスクリプトがない場合は以下でダウンロードして実行できる。
+再実行時（キャッシュを確実に更新する場合）:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-$url = "https://raw.githubusercontent.com/tanakayoshiki1-oss/wsl2-infra/main/check-setup.ps1"
-Invoke-WebRequest $url -OutFile "$env:TEMP\check-setup.ps1"
-& "$env:TEMP\check-setup.ps1"
+Remove-Item "$env:TEMP\check-setup.ps1" -Force -ErrorAction SilentlyContinue
+$url    = "https://raw.githubusercontent.com/tanakayoshiki1-oss/wsl2-infra/main/check-setup.ps1"
+$script = "$env:TEMP\check-setup.ps1"
+
+Invoke-WebRequest $url -OutFile $script
+Unblock-File $script
+powershell.exe -ExecutionPolicy Bypass -File $script
+```
+
+wsl2-infra をクローン済みの場合はリポジトリ内のスクリプトをそのまま実行できる:
+
+```powershell
+$script = "$env:OneDrive\Projects\wsl2-infra\check-setup.ps1"
+Unblock-File $script
+powershell.exe -ExecutionPolicy Bypass -File $script
 ```
 
 出力例：
