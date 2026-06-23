@@ -1,13 +1,13 @@
-# check-setup.ps1
+﻿# check-setup.ps1
 # 社給 PC セットアップ状態チェックスクリプト
 # 実行方法: PowerShell (Windows Terminal) で
 #   Set-ExecutionPolicy -Scope Process Bypass
 #   .\check-setup.ps1
 
 $wsl = "$env:SystemRoot\System32\wsl.exe"
-$ok  = "[OK] "
-$ng  = "[NG] "
-$na  = "[--] "
+$ok  = "[OK]"
+$ng  = "[NG]"
+$na  = "[--]"
 
 $issues = @()
 
@@ -24,7 +24,7 @@ function Show-Ok($msg) {
 
 function Show-Ng($msg, $hint = "") {
     Write-Host "$ng $msg" -ForegroundColor Red
-    if ($hint) { Write-Host "     → $hint" -ForegroundColor Yellow }
+    if ($hint) { Write-Host "     -> $hint" -ForegroundColor Yellow }
     $script:issues += $msg
 }
 
@@ -36,24 +36,21 @@ function Show-Na($msg) {
 Show-Header "1. WSL2"
 # ======================================================
 
-# WSL2 機能が有効か
-$wslFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux -EA SilentlyContinue
-if ($wslFeature.State -eq "Enabled") {
+$wslCheck = & wsl --list 2>&1
+if ($LASTEXITCODE -eq 0 -or $wslCheck -match "Ubuntu|Windows") {
     Show-Ok "WSL2 機能が有効"
 } else {
     Show-Ng "WSL2 機能が無効" "管理者 PowerShell で: wsl --install"
 }
 
-# Ubuntu がインストールされているか
 $distros = & $wsl --list --quiet 2>&1
 $ubuntuInstalled = $distros | Where-Object { $_ -match "Ubuntu" }
 if ($ubuntuInstalled) {
-    Show-Ok "Ubuntu がインストール済み ($($ubuntuInstalled -join ', '))"
+    Show-Ok "Ubuntu がインストール済み"
 } else {
     Show-Ng "Ubuntu が未インストール" "wsl --install"
 }
 
-# WSL2 バージョン確認
 if ($ubuntuInstalled) {
     $versionInfo = & $wsl --list --verbose 2>&1 | Where-Object { $_ -match "Ubuntu" }
     if ($versionInfo -match "\s2\s") {
@@ -68,15 +65,13 @@ Show-Header "2. Docker Engine (WSL2 Ubuntu 内)"
 # ======================================================
 
 if ($ubuntuInstalled) {
-    # docker コマンドが存在するか
     $dockerPath = & $wsl -d Ubuntu -- which docker 2>&1
     if ($dockerPath -match "/docker") {
-        Show-Ok "Docker CLI インストール済み ($($dockerPath.Trim()))"
+        Show-Ok "Docker CLI インストール済み"
     } else {
         Show-Ng "Docker CLI が未インストール" "curl -fsSL https://get.docker.com | sudo sh"
     }
 
-    # docker デーモンが起動しているか
     $dockerInfo = & $wsl -d Ubuntu -- docker info 2>&1
     if ($dockerInfo -match "Server Version") {
         Show-Ok "Docker デーモン 起動中"
@@ -84,7 +79,6 @@ if ($ubuntuInstalled) {
         Show-Ng "Docker デーモンが停止中" "sudo service docker start"
     }
 
-    # docker グループにユーザーが入っているか（sudo なしで実行できるか）
     $groups = & $wsl -d Ubuntu -- groups 2>&1
     if ($groups -match "docker") {
         Show-Ok "ユーザーが docker グループに所属"
@@ -92,7 +86,6 @@ if ($ubuntuInstalled) {
         Show-Ng "ユーザーが docker グループ未所属" "sudo usermod -aG docker `$USER → Ubuntu 再起動"
     }
 
-    # /etc/wsl.conf で Docker 自動起動が設定されているか
     $wslConf = & $wsl -d Ubuntu -- cat /etc/wsl.conf 2>&1
     if ($wslConf -match "service docker start") {
         Show-Ok "/etc/wsl.conf に Docker 自動起動設定あり"
@@ -107,31 +100,27 @@ if ($ubuntuInstalled) {
 Show-Header "3. Windows ツール"
 # ======================================================
 
-# Windows Git
-$gitPath = (Get-Command git -EA SilentlyContinue)?.Source
-if ($gitPath -and $gitPath -match "Program Files\\Git") {
+$gitCmd = Get-Command git -EA SilentlyContinue
+if ($gitCmd -and $gitCmd.Source -match "Program Files\\Git") {
     $gitVer = & git --version 2>&1
     Show-Ok "Windows Git インストール済み ($gitVer)"
 } else {
-    Show-Ng "Windows Git が未インストール（または PATH 未設定）" "https://git-scm.com/download/win"
+    Show-Ng "Windows Git が未インストール" "https://git-scm.com/download/win"
 }
 
-# PowerShell 7 (pwsh)
-$pwshPath = (Get-Command pwsh -EA SilentlyContinue)?.Source
-if ($pwshPath) {
+$pwshCmd = Get-Command pwsh -EA SilentlyContinue
+if ($pwshCmd) {
     $pwshVer = & pwsh --version 2>&1
     Show-Ok "PowerShell 7 インストール済み ($pwshVer)"
 } else {
     Show-Ng "PowerShell 7 (pwsh) が未インストール" "winget install Microsoft.PowerShell"
 }
 
-# gh CLI
-$ghPath = (Get-Command gh -EA SilentlyContinue)?.Source
-if ($ghPath) {
+$ghCmd = Get-Command gh -EA SilentlyContinue
+if ($ghCmd) {
     $ghVer = & gh --version 2>&1 | Select-Object -First 1
     Show-Ok "gh CLI インストール済み ($ghVer)"
 
-    # gh 認証状態
     $ghAuth = & gh auth status 2>&1
     if ($ghAuth -match "Logged in") {
         Show-Ok "gh CLI: GitHub 認証済み"
@@ -146,7 +135,6 @@ if ($ghPath) {
 Show-Header "4. プロジェクトフォルダ"
 # ======================================================
 
-# OneDrive パス
 $oneDrivePath = $env:OneDrive
 if ($oneDrivePath -and (Test-Path $oneDrivePath)) {
     Show-Ok "OneDrive パス: $oneDrivePath"
@@ -154,15 +142,13 @@ if ($oneDrivePath -and (Test-Path $oneDrivePath)) {
     Show-Ng "OneDrive が見つからない" "OneDrive の設定を確認してください"
 }
 
-# Projects フォルダ
-$projBase = if ($oneDrivePath) { "$oneDrivePath\Projects" } else { "C:\Projects" }
+$projBase = if ($oneDrivePath -and (Test-Path $oneDrivePath)) { "$oneDrivePath\Projects" } else { "C:\Projects" }
 if (Test-Path $projBase) {
     Show-Ok "Projects フォルダ: $projBase"
 } else {
     Show-Ng "Projects フォルダが未作成: $projBase" "mkdir '$projBase'"
 }
 
-# 各リポジトリのクローン状態
 $repos = @("wsl2-infra","health-app","health-base","grafana-fiware","plateau-fiware","fiware-base")
 foreach ($repo in $repos) {
     $repoPath = "$projBase\$repo"
@@ -199,11 +185,8 @@ $task = Get-ScheduledTask -TaskName "WSL2-Docker-startup" -EA SilentlyContinue
 if ($task) {
     $state = $task.State
     Show-Ok "タスク 'WSL2-Docker-startup' 登録済み (状態: $state)"
-
-    # スクリプトパスが正しいか確認
     $taskScript = $task.Actions[0].Arguments
-    $startupScript = "$projBase\wsl2-infra\startup.ps1"
-    if ($taskScript -match [regex]::Escape("startup.ps1")) {
+    if ($taskScript -match "startup.ps1") {
         Show-Ok "タスクのスクリプトパス設定あり"
     } else {
         Show-Ng "タスクのスクリプトパスを確認してください" "タスクスケジューラを開いて確認"
