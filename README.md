@@ -67,6 +67,148 @@ wsl2-infra/
   README.md         本ドキュメント
 ```
 
+## 事前準備（初回セットアップ）
+
+> **重要: すべての手順は VSCode ではなく Windows Terminal（またはスタートメニューの PowerShell）から実行すること。**
+> VSCode の統合ターミナルから実行すると認証・対話プロンプトで止まる場合がある。
+
+### 0-1. WSL2 と Ubuntu のインストール
+
+**管理者 PowerShell** を開いて実行する。
+
+```powershell
+# WSL2 + Ubuntu を一括インストール（再起動が必要）
+wsl --install
+```
+
+再起動後、Ubuntu が自動起動してユーザー名・パスワードを設定する。
+設定後、Ubuntu ターミナルを閉じて次のステップへ。
+
+```powershell
+# インストール確認
+wsl --list --verbose
+# NAME      STATE   VERSION
+# Ubuntu    Running 2       ← VERSION が 2 であること
+```
+
+### 0-2. Docker Engine のインストール（WSL2 Ubuntu 内）
+
+**Ubuntu ターミナル**（Windows Terminal → Ubuntu タブ）で実行する。
+
+```bash
+# Docker 公式インストールスクリプト
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# 現在のユーザーを docker グループに追加（sudo なしで docker を使えるようにする）
+sudo usermod -aG docker $USER
+
+# Docker サービスを起動
+sudo service docker start
+
+# グループ変更を反映するため Ubuntu を再起動
+exit
+```
+
+```powershell
+# PowerShell で Ubuntu を再起動
+wsl --terminate Ubuntu
+wsl -d Ubuntu
+```
+
+```bash
+# Docker 動作確認（Ubuntu ターミナル）
+docker run --rm hello-world
+# Hello from Docker! と表示されれば OK
+```
+
+### 0-3. Docker の自動起動設定（WSL2 Ubuntu 内）
+
+WSL2 は systemd が無効なため、Docker サービスを `/etc/wsl.conf` で自動起動させる。
+
+```bash
+# Ubuntu ターミナルで実行
+sudo tee /etc/wsl.conf << 'EOF'
+[boot]
+command = service docker start
+EOF
+```
+
+```powershell
+# WSL2 を再起動して確認
+wsl --terminate Ubuntu
+wsl -d Ubuntu -- docker info 2>&1 | head -5
+# Server: ... と表示されれば OK
+```
+
+### 0-4. Windows Git のインストール
+
+[https://git-scm.com/download/win](https://git-scm.com/download/win) からダウンロードしてインストール。
+インストール時のオプションはデフォルトで OK。
+
+```powershell
+# PowerShell で確認
+git --version
+# git version 2.x.x.windows.x
+```
+
+### 0-5. PowerShell 7 (pwsh) のインストール
+
+```powershell
+# Microsoft Store からインストール（またはコマンドで）
+winget install Microsoft.PowerShell
+```
+
+インストール後、スタートメニューに「PowerShell 7」が追加される。
+
+### 0-6. gh CLI のインストール
+
+```powershell
+winget install GitHub.cli
+```
+
+```powershell
+# 認証（ブラウザが開くので GitHub アカウントでログイン）
+gh auth login
+# → GitHub.com → HTTPS → Login with web browser を選択
+```
+
+### 0-7. リポジトリのクローン
+
+```powershell
+# C:\Projects フォルダを作成してクローン
+mkdir C:\Projects
+cd C:\Projects
+gh repo clone tanakayoshiki1-oss/wsl2-infra
+gh repo clone tanakayoshiki1-oss/health-app
+gh repo clone tanakayoshiki1-oss/health-base
+gh repo clone tanakayoshiki1-oss/grafana-fiware
+gh repo clone tanakayoshiki1-oss/plateau-fiware
+gh repo clone tanakayoshiki1-oss/fiware-base
+```
+
+### 0-8. startup.ps1 のユーザー名を修正
+
+`C:\Projects\wsl2-infra\startup.ps1` の pwsh パスにユーザー名が含まれているため修正する。
+
+```powershell
+# 現在の pwsh パスを確認
+(Get-Command pwsh).Source
+# 例: C:\Users\<username>\AppData\Local\Microsoft\WindowsApps\pwsh.exe
+```
+
+[startup.ps1](startup.ps1) の以下の行を実際のユーザー名に合わせて修正する。
+
+```powershell
+# 修正前（個人 PC のユーザー名）
+$pwsh  = "C:\Users\tanak\AppData\Local\Microsoft\WindowsApps\pwsh.exe"
+
+# 修正後（社給 PC のユーザー名に変更）
+$pwsh  = "C:\Users\<username>\AppData\Local\Microsoft\WindowsApps\pwsh.exe"
+```
+
+---
+
 ## セットアップ手順
 
 ### 1. Windows Firewall 規則の追加（管理者 PowerShell）
