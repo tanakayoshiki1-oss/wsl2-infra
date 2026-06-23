@@ -10,19 +10,27 @@
 #
 # ネットワーク構成 (WSL2 NAT モード):
 #   Windows localhost : wslrelay.exe が 127.0.0.1:PORT → WSL2 へ転送
-#   Mac LAN           : lan-relay.ps1 が 192.168.3.6:PORT → 127.0.0.1:PORT へ転送
+#   LAN               : lan-relay.ps1 が <LAN_IP>:PORT → 127.0.0.1:PORT へ転送
+#                       LAN IP は起動時にデフォルトゲートウェイのインターフェースから自動取得
 #
-# LAN リレー一覧:
-#   192.168.3.6:4003 → 127.0.0.1:443  health-app (HTTPS)
-#   192.168.3.6:5101 → 127.0.0.1:4101 Grafana
-#   192.168.3.6:5200 → 127.0.0.1:4200 Plateau
+# LAN リレー一覧 (LAN_IP は自動検出):
+#   <LAN_IP>:4003 → 127.0.0.1:443  health-app (HTTPS)
+#   <LAN_IP>:5101 → 127.0.0.1:4101 Grafana
+#   <LAN_IP>:5200 → 127.0.0.1:4200 Plateau
 #
 # 重要: portproxy / Add-Type / 0.0.0.0 バインドは wslrelay を kill する
-#       LAN リレーは 192.168.3.6 固有バインド + Runspace 方式を使用
+#       LAN リレーは LAN_IP 固有バインド + Runspace 方式を使用
 
 $wsl      = "$env:SystemRoot\System32\wsl.exe"
 $logFile  = "$env:TEMP\wsl2_startup.log"
 $selfDir  = $PSScriptRoot
+
+# LAN IP を自動取得（デフォルトゲートウェイのインターフェースから）
+$_gw   = Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Sort-Object RouteMetric | Select-Object -First 1
+$lanIP = (Get-NetIPAddress -InterfaceIndex $_gw.InterfaceIndex -AddressFamily IPv4 |
+          Where-Object { $_.IPAddress -notmatch '^169\.254\.' } |
+          Select-Object -First 1).IPAddress
+if (-not $lanIP) { $lanIP = "127.0.0.1" }  # フォールバック
 
 function Log($msg) {
     $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $msg"
@@ -39,14 +47,15 @@ function Start-LanRelay($lanPort, $targetPort, $name) {
     $relay = "$selfDir\lan-relay.ps1"
     $pwsh  = "C:\Users\tanak\AppData\Local\Microsoft\WindowsApps\pwsh.exe"
     Start-Process $pwsh `
-        -ArgumentList "-ExecutionPolicy Bypass -File `"$relay`" -LanIP 192.168.3.6 -LanPort $lanPort -TargetIP 127.0.0.1 -TargetPort $targetPort" `
+        -ArgumentList "-ExecutionPolicy Bypass -File `"$relay`" -LanIP $lanIP -LanPort $lanPort -TargetIP 127.0.0.1 -TargetPort $targetPort" `
         -WindowStyle Hidden
     Start-Sleep -Seconds 3
-    $ok = [bool](Get-NetTCPConnection -LocalAddress "192.168.3.6" -LocalPort $lanPort -State Listen -EA SilentlyContinue)
-    Log "LAN relay 192.168.3.6:${lanPort} (${name}): $(if ($ok) {'started'} else {'FAILED'})"
+    $ok = [bool](Get-NetTCPConnection -LocalAddress $lanIP -LocalPort $lanPort -State Listen -EA SilentlyContinue)
+    Log "LAN relay ${lanIP}:${lanPort} (${name}): $(if ($ok) {'started'} else {'FAILED'})"
 }
 
 Log "=== wsl2-infra startup ==="
+Log "LAN IP: $lanIP"
 
 # ── 1. WSL2 Ubuntu 起動 + keepalive ──────────────────────────────────
 Log "WSL2 Ubuntu starting..."
@@ -128,7 +137,7 @@ Log "wslrelay monitor job: $(if ($monitorJob) {'started'} else {'FAILED'})"
 # ── 8. LAN リレー起動 ─────────────────────────────────────────────────
 # ポート選定の原則:
 #   LAN ポートは docker-compose に含まれないポートを使用する
-#   docker-compose ポートに 192.168.3.6 バインドすると wslrelay がリスナーを削除する
+#   docker-compose ポートに LAN_IP バインドすると wslrelay がリスナーを削除する
 #
 #   4003: docker-compose 未登録 → 127.0.0.1:443  health-app HTTPS
 #   5101: docker-compose 未登録 → 127.0.0.1:4101 Grafana (4101 は登録済み)
@@ -140,14 +149,14 @@ Start-LanRelay 5200 4200 "Plateau"
 
 # ── 9. 疎通確認 ────────────────────────────────────────────────────────
 Log "Connectivity check:"
-Log "  127.0.0.1:443  (wslrelay)        -> $(Test-TcpPort '127.0.0.1'   443)"
-Log "  192.168.3.6:4003 (health-app)    -> $(Test-TcpPort '192.168.3.6' 4003)"
-Log "  192.168.3.6:5101 (Grafana)       -> $(Test-TcpPort '192.168.3.6' 5101)"
-Log "  192.168.3.6:5200 (Plateau)       -> $(Test-TcpPort '192.168.3.6' 5200)"
+Log "  127.0.0.1:443  (wslrelay)       -> $(Test-TcpPort '127.0.0.1' 443)"
+Log "  ${lanIP}:4003 (health-app)      -> $(Test-TcpPort $lanIP 4003)"
+Log "  ${lanIP}:5101 (Grafana)         -> $(Test-TcpPort $lanIP 5101)"
+Log "  ${lanIP}:5200 (Plateau)         -> $(Test-TcpPort $lanIP 5200)"
 
 Log "=== startup complete ==="
 Log "Dashboard : https://127.0.0.1/status.html"
-Log "Dashboard : https://192.168.3.6:4003/status.html  (Mac)"
+Log "Dashboard : https://${lanIP}:4003/status.html  (LAN)"
 
 # ── バックグラウンドジョブを維持するため継続実行 ─────────────────────
 while ($true) { Start-Sleep -Seconds 300 }
