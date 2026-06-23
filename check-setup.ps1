@@ -79,10 +79,13 @@ if ($ubuntuInstalled) {
     }
 
     $wslConf = & $wsl -d Ubuntu -- cat /etc/wsl.conf 2>&1
-    if ($wslConf -match "service docker start") {
+    $wslConfStr = $wslConf -join "`n"
+    if ($wslConfStr -match "systemd\s*=\s*true") {
+        Show-Ok "/etc/wsl.conf: systemd=true (Docker auto-starts via systemd)"
+    } elseif ($wslConfStr -match "service docker start") {
         Show-Ok "/etc/wsl.conf: Docker auto-start configured"
     } else {
-        Show-Ng "/etc/wsl.conf: Docker auto-start not set" "See README step 0-3"
+        Show-Ng "/etc/wsl.conf: Docker auto-start not configured" "See README step 0-3"
     }
 } else {
     Show-Na "Skipped (Ubuntu not installed)"
@@ -133,16 +136,21 @@ if ($oneDrivePath -and (Test-Path $oneDrivePath)) {
     Show-Ng "OneDrive not found" "Check OneDrive settings"
 }
 
-$projBase = if ($oneDrivePath -and (Test-Path $oneDrivePath)) {
-    "$oneDrivePath\Projects"
-} else {
-    "C:\Projects"
+# Check both C:\Projects and OneDrive\Projects
+$projBase = $null
+$candidates = @("C:\Projects")
+if ($oneDrivePath -and (Test-Path $oneDrivePath)) {
+    $candidates += "$oneDrivePath\Projects"
+}
+foreach ($c in $candidates) {
+    if (Test-Path $c) { $projBase = $c; break }
 }
 
-if (Test-Path $projBase) {
-    Show-Ok "Projects folder: $projBase"
+if ($projBase) {
+    Show-Ok "Projects folder found: $projBase"
 } else {
-    Show-Ng "Projects folder missing: $projBase" "mkdir '$projBase'"
+    $projBase = if ($oneDrivePath) { "$oneDrivePath\Projects" } else { "C:\Projects" }
+    Show-Ng "Projects folder missing" "mkdir '$projBase'  (OneDrive recommended on company PC)"
 }
 
 $repos = @("wsl2-infra","health-app","health-base","grafana-fiware","plateau-fiware","fiware-base")
