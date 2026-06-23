@@ -72,6 +72,41 @@ wsl2-infra/
 > **重要: すべての手順は VSCode ではなく Windows Terminal（またはスタートメニューの PowerShell）から実行すること。**
 > VSCode の統合ターミナルから実行すると認証・対話プロンプトで止まる場合がある。
 
+### セットアップ状態チェック（最初に実行）
+
+部分的にセットアップ済みの場合、まず以下のスクリプトで現状を確認する。
+
+```powershell
+# wsl2-infra をクローン済みの場合
+Set-ExecutionPolicy -Scope Process Bypass
+cd "$env:OneDrive\Projects\wsl2-infra"   # OneDrive パスは環境に合わせて変更
+.\check-setup.ps1
+```
+
+クローン前で手元にスクリプトがない場合は以下でダウンロードして実行できる。
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+$url = "https://raw.githubusercontent.com/tanakayoshiki1-oss/wsl2-infra/main/check-setup.ps1"
+Invoke-WebRequest $url -OutFile "$env:TEMP\check-setup.ps1"
+& "$env:TEMP\check-setup.ps1"
+```
+
+出力例：
+```
+[OK]  WSL2 機能が有効
+[OK]  Ubuntu がインストール済み
+[NG]  Docker デーモンが停止中  → sudo service docker start
+[OK]  Windows Git インストール済み
+[NG]  gh CLI が未インストール  → winget install GitHub.cli
+...
+以下の 2 項目が未完了です：
+  ・Docker デーモンが停止中
+  ・gh CLI が未インストール
+```
+
+`[OK]` の手順はスキップして `[NG]` の手順のみ実施する。
+
 ### 0-1. WSL2 と Ubuntu のインストール
 
 **管理者 PowerShell** を開いて実行する。
