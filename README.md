@@ -173,12 +173,47 @@ gh auth login
 # → GitHub.com → HTTPS → Login with web browser を選択
 ```
 
-### 0-7. リポジトリのクローン
+### 0-7. プロジェクトフォルダの配置場所
+
+**社給 PC では OneDrive 配下に置くこと。`C:\Program Files` は不可。**
+
+| 場所 | 可否 | 理由 |
+|------|------|------|
+| `C:\Program Files\Projects` | ✗ 不可 | 書き込みに管理者権限が必要。git / docker が都度失敗する |
+| `C:\Projects` | ✗ 不可 | セキュリティポリシーで削除される |
+| `C:\Users\<user>\OneDrive\Projects` | ✓ 推奨 | 通常ユーザー権限で書き込み可能・自動バックアップあり |
+
+#### OneDrive パスの確認
+
+会社の設定によってパスが異なる。エクスプローラーで確認するか以下で確認する。
 
 ```powershell
-# C:\Projects フォルダを作成してクローン
-mkdir C:\Projects
-cd C:\Projects
+# PowerShell で OneDrive パスを確認
+$env:OneDrive
+# 例1: C:\Users\yamada\OneDrive
+# 例2: C:\Users\yamada\OneDrive - 株式会社〇〇  ← スペースに注意
+```
+
+#### `.git` フォルダの OneDrive 同期問題
+
+OneDrive は `.git` 内の大量の小ファイルを同期しようとして競合・遅延が起きることがある。
+Projects フォルダを「常にこのデバイス上に保持」に設定すること。
+
+```
+エクスプローラー → OneDrive\Projects を右クリック
+→「常にこのデバイス上に保持」を選択
+```
+
+または OneDrive アイコン（タスクトレイ）→ 設定 → 同期とバックアップ
+→ 「バックアップしないフォルダー」に Projects を追加してもよい。
+
+### 0-8. リポジトリのクローン
+
+```powershell
+# OneDrive 配下に Projects フォルダを作成してクローン
+$proj = "$env:OneDrive\Projects"   # OneDrive パスを自動取得
+mkdir $proj
+cd $proj
 gh repo clone tanakayoshiki1-oss/wsl2-infra
 gh repo clone tanakayoshiki1-oss/health-app
 gh repo clone tanakayoshiki1-oss/health-base
@@ -187,24 +222,74 @@ gh repo clone tanakayoshiki1-oss/plateau-fiware
 gh repo clone tanakayoshiki1-oss/fiware-base
 ```
 
-### 0-8. startup.ps1 のユーザー名を修正
+### 0-9. パスの修正（OneDrive 移行時）
 
-`C:\Projects\wsl2-infra\startup.ps1` の pwsh パスにユーザー名が含まれているため修正する。
+`C:\Projects` が `C:\Users\<user>\OneDrive\Projects`（または `OneDrive - 会社名\Projects`）に
+変わるため、以下のファイルを修正する。
+
+#### startup.ps1 — プロジェクトパスとユーザー名
 
 ```powershell
-# 現在の pwsh パスを確認
-(Get-Command pwsh).Source
-# 例: C:\Users\<username>\AppData\Local\Microsoft\WindowsApps\pwsh.exe
+# 実際の OneDrive パスを確認してからエディタで修正する
+echo $env:OneDrive
 ```
 
-[startup.ps1](startup.ps1) の以下の行を実際のユーザー名に合わせて修正する。
+[startup.ps1](startup.ps1) の以下 2 箇所を修正：
 
 ```powershell
-# 修正前（個人 PC のユーザー名）
-$pwsh  = "C:\Users\tanak\AppData\Local\Microsoft\WindowsApps\pwsh.exe"
+# ① pwsh のパス（ユーザー名部分）
+# 修正前:
+$pwsh = "C:\Users\tanak\AppData\Local\Microsoft\WindowsApps\pwsh.exe"
+# 修正後（$env:LOCALAPPDATA で自動取得できる）:
+$pwsh = "$env:LOCALAPPDATA\Microsoft\WindowsApps\pwsh.exe"
 
-# 修正後（社給 PC のユーザー名に変更）
-$pwsh  = "C:\Users\<username>\AppData\Local\Microsoft\WindowsApps\pwsh.exe"
+# ② プロジェクトのパス一覧（/mnt/c/Users/<user>/OneDrive/Projects/... 形式）
+# 修正前:
+$projects = @(
+    "/mnt/c/Projects/health-base",
+    "/mnt/c/Projects/health-app",
+    ...
+)
+# 修正後（OneDrive パスに合わせる）:
+# 例: OneDrive が C:\Users\yamada\OneDrive の場合
+$projects = @(
+    "/mnt/c/Users/yamada/OneDrive/Projects/health-base",
+    "/mnt/c/Users/yamada/OneDrive/Projects/health-app",
+    "/mnt/c/Users/yamada/OneDrive/Projects/grafana-fiware",
+    "/mnt/c/Users/yamada/OneDrive/Projects/plateau-fiware",
+    "/mnt/c/Users/yamada/OneDrive/Projects/fiware-base"
+)
+```
+
+> パスにスペースが含まれる場合（`OneDrive - 会社名`）はシングルクォートで囲む：
+> `'/mnt/c/Users/yamada/OneDrive - 会社名/Projects/health-base'`
+
+#### CLAUDE.md — パス表記の更新
+
+`C:\Projects\CLAUDE.md` のプロジェクト一覧パスを OneDrive パスに書き換える。
+
+```markdown
+# 修正例
+| C:\Users\<user>\OneDrive\Projects\wsl2-infra | tanakayoshiki1-oss/wsl2-infra | ...
+```
+
+#### タスクスケジューラ登録コマンド（0-8 参照）
+
+タスクスケジューラに登録するスクリプトパスも OneDrive パスに変わる。
+
+```powershell
+$pwsh   = "$env:LOCALAPPDATA\Microsoft\WindowsApps\pwsh.exe"
+$script = "$env:OneDrive\Projects\wsl2-infra\startup.ps1"
+```
+
+### 0-10. 動作確認
+
+```powershell
+# タスクスケジューラに登録後、手動で起動テスト
+Start-ScheduledTask -TaskName "WSL2-Docker-startup"
+Start-Sleep -Seconds 90
+Get-Content "$env:TEMP\wsl2_startup.log" -Tail 20
+# "=== startup complete ===" と全項目 "True" が出ていれば OK
 ```
 
 ---
